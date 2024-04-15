@@ -1,30 +1,27 @@
 /* eslint-disable no-undef */
-import express from 'express'
-import cors from 'cors'
-import {Server as _Server} from 'xeue-webserver'
-import {Logs as _Logs} from 'xeue-logs'
-import {Config as _Config} from 'xeue-config'
-import {Shell as _Shell} from 'xeue-shell'
-import path from 'path'
-import {fileURLToPath} from 'url'
-import ejs from 'ejs'
+import express from 'express';
+import cors from 'cors';
+import {Server as _Server} from 'xeue-webserver';
+import {Logs as _Logs} from 'xeue-logs';
+import {Config as _Config} from 'xeue-config';
+import {Shell as _Shell} from 'xeue-shell';
+import path from 'path';
+import {fileURLToPath} from 'url';
+import ejs from 'ejs';
+import readline from 'readline';
 
 import { createRequire } from 'module'
 const require = createRequire(import.meta.url)
 const {version} = require('./package.json')
+const gstreamer = require('gstreamer-superficial');
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-const ring1sink = '{7577463C-D621-47B5-8666-143724DAFED6}';
-const ring2sink = '{7577463C-D621-47B5-8666-143724DAFED6}';
-//const recordSink = '{0.0.1.00000000}.{7980168d-fbba-467c-b39f-b560f0274eaa}';
-const recordSink = '{0.0.1.00000000}.{a6770a86-c8f7-4090-9fce-4f49f1e93ac4}';
-
-const Logs = new _Logs(false, 'CreditsLogging', __dirname, 'W', false)
+const Logs = new _Logs(false, 'CreditsLogging', __dirname, 'D', false)
 const config = new _Config(Logs)
 const webServer = new _Server(expressRoutes, Logs, version, config)
-const Shell = new _Shell(Logs, 'PLAYER', 'D', 'cmd.exe');
+const Shell = new _Shell(Logs, 'PLAYER', 'D');
 let record, play, ring1, ring2
 let ring1ringing = false
 let ring2ringing = false;
@@ -47,25 +44,25 @@ let ring2ringing = false;
 		await config.fromCLI(__dirname + '/config.conf')
 	}
 
-	Logs.setConf(
-		config.get('createLogFile'),
-		'TrebmalLogging',
-		__dirname,
-		config.get('loggingLevel'),
-		config.get('debugLineNum')
-	)
+	Logs.setConf({
+		'createLogFile': config.get('createLogFile'),
+		'logsFileName': 'TrebmalLogging',
+		'configLocation': __dirname,
+		'loggingLevel': config.get('loggingLevel'),
+		'debugLineNum': config.get('debugLineNum')
+    })
 
 	config.userInput(async (command)=>{
 		switch (command) {
 		case 'config':
 			await config.fromCLI(__dirname + '/config.conf')
-			Logs.setConf(
-				config.get('createLogFile'),
-				'TrebmalLogging',
-				__dirname,
-				config.get('loggingLevel'),
-				config.get('debugLineNum')
-			)
+			Logs.setConf({
+				'createLogFile': config.get('createLogFile'),
+				'logsFileName': 'TrebmalLogging',
+				'configLocation': __dirname,
+				'loggingLevel': config.get('loggingLevel'),
+				'debugLineNum': config.get('debugLineNum')
+            })
 			return true
 		}
 	})
@@ -75,6 +72,17 @@ let ring2ringing = false;
 	Logs.log(`Trebmal can be accessed at http://localhost:${config.get('port')}`, ['C', 'SERVER', Logs.g])
 	config.print()
 }
+
+const sinks = getSinks().filter(sink => sink.api == 'wasapi');
+const sources = getSources().filter(sink => sink.api == 'wasapi');
+Logs.log('Please select output for Ring 1');
+const ring1sink = await select(sinks, 0);
+Logs.log('Please select output for Ring 2');
+const ring2sink = await select(sinks, 0);
+
+Logs.log('Please select input for audio to be reversed');
+const recordSrc = await select(sources, 0);
+Logs.log('Sources all selected');
 
 function expressRoutes(app) {
 	app.set('views', __dirname + '/views')
@@ -97,13 +105,14 @@ function expressRoutes(app) {
     })
 
     app.get('/startRecord', (request, response) =>{ 
-        record = Shell.process(`gst-launch-1.0 wasapisrc device="${recordSink}" ! audioconvert ! audioresample ! wavenc ! filesink location=reverseaudio.wav`, true);
+        record = new gstreamer.Pipeline(`${sources[recordSrc].api}src device="${sources[recordSrc].id}" ! audioconvert ! audioresample ! wavenc ! filesink location=reverseaudio.wav`);
+        record.play();
         response.send('Started Recording');
         Logs.log('Started recording')
     })
 
     app.get('/startPlay', (request, response) =>{ 
-        play = Shell.process(`ffplay -f lavfi amovie=reverseaudio.wav,areverse1`);
+        play = Shell.process(`ffplay -f lavfi amovie=reverseaudio.wav,areverse`);
         response.send('Started Playing');
         Logs.log('Started playing')
     })
@@ -130,10 +139,10 @@ function expressRoutes(app) {
 
     app.get('/stopRecord', (request, response) =>{ 
         try {
-            record.kill();
+            record.stop();
             Logs.log('Stopped recording')
         } catch (error) {
-            
+            Logs.error('Issue stopping', error);
         }
         response.send('Recording Stopped');
     })
@@ -150,15 +159,133 @@ function expressRoutes(app) {
 }
 
 function doRing1() {
-    ring1 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! directsoundsink device="${ring1sink}"`, true);
+    ring1 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! ${sinks[ring1sink].api}sink device="${sinks[ring1sink].id}"`, true);
     ring1.on('exit', ()=>{
         if (ring1ringing) doRing1();
     })
 }
 
 function doRing2() {
-    ring2 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! directsoundsink device="${ring2sink}"`, true);
+    ring2 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! ${sinks[ring2sink].api}sink device="${sinks[ring2sink].id}"`, true);
     ring2.on('exit', ()=>{
         if (ring1ringing) doRing2();
     })
+}
+
+function getSinks() {
+    const stdout = Shell.runSync(`gst-device-monitor-1.0 -i Audio/Sink`);
+    const devices = stdout.split('Device found:')
+    const sinks = [];
+    devices.forEach(device => {
+        let deviceData = device.split(/\r?\n/);
+        deviceData = deviceData.filter(dev => {
+            if (['name', 'device.api', 'device.strid', 'device.id', 'device.guid'].some(element => dev.includes(element))) return true
+            else return false;
+        });
+        device = {};
+        if (deviceData.length < 1) return;
+        device.name = deviceData[0].split(': ')[1]
+        device.api = deviceData[1].split('= ')[1]
+        device.id = deviceData[2].split('= ')[1]
+        sinks.push(device);
+    })
+    return sinks;
+}
+
+function getSources() {
+    const stdout = Shell.runSync(`gst-device-monitor-1.0 -i Audio/Source`);
+    const devices = stdout.split('Device found:')
+    const sources = [];
+    devices.forEach(device => {
+        let deviceData = device.split(/\r?\n/);
+        deviceData = deviceData.filter(dev => {
+            if (['name', 'device.api', 'device.strid', 'device.id', 'device.guid'].some(element => dev.includes(element))) return true
+            else return false;
+        });
+        device = {};
+        if (deviceData.length < 1) return;
+        device.name = deviceData[0].split(': ')[1]
+        device.api = deviceData[1].split('= ')[1]
+        device.id = deviceData[2].split('= ')[1]
+        sources.push(device);
+    })
+    return sources;
+}
+
+function select(object, current) {
+    const [list, listPretty] = [Object.keys(object), object.map(item => item.name)];
+
+    let selected = list.indexOf(current);
+    if (selected == -1) {
+        selected = list.indexOf(String(current));
+    }
+
+    const printSelected = (moveCursor = true) => {
+        let options = [];
+        list.forEach((option, index) => {
+            let colour = '';
+            switch (option) {
+            case true:
+            case 'true':
+                colour = Logs.g;
+                break;
+            case false:
+            case 'false':
+                colour = Logs.r;
+                break;
+            case undefined:
+            case null:
+                colour = Logs.y;
+                break;
+            }
+            const text = listPretty[option];
+            if (index == selected) {
+                options.push(`${Logs.reset}${Logs.underline}${colour}${text}${Logs.reset}${Logs.dim}`);
+            } else {
+                options.push(`${Logs.dim}${colour}${text}`);
+            }
+        });
+        if (moveCursor) readline.moveCursor(process.stdout, 0, -1*options.length);
+        options.forEach(option => {
+            console.log(option);
+        })
+    };
+
+    printSelected(false);
+    return new Promise(resolve => {
+        process.stdin.setRawMode(true);
+        process.stdin.resume();
+        process.stdin.on('keypress', (ch, key) => {
+            switch (key.name) {
+            case 'down':
+            case 'right': //Right
+                if (selected < list.length - 1) {
+                    selected++;
+                    printSelected();
+                }
+                break;
+            case 'up':
+            case 'left': //Left
+                if (selected > 0) {
+                    selected--;
+                    printSelected();
+                }
+                break;
+            case 'return': {//Enter
+                process.stdin.removeAllListeners('keypress');
+                process.stdin.setRawMode(false);
+                readline.moveCursor(process.stdout, 0, -1);
+                readline.clearLine(process.stdout, 1);
+                const text = listPretty[list[selected]];
+                console.log('Data Entered: '+text);
+                let ret = list[selected] === 'true' ? true : list[selected];
+                ret = list[selected] === 'false' ? false : ret;
+                resolve(ret);
+                break;
+            }
+            default:
+                break;
+            }
+        });
+    });
 }
