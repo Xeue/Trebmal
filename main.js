@@ -111,8 +111,9 @@ function expressRoutes(app) {
         Logs.log('Started recording')
     })
 
-    app.get('/startPlay', (request, response) =>{ 
-        play = Shell.process(`ffplay -f lavfi amovie=reverseaudio.wav,areverse`);
+    app.get('/startPlay', (request, response) =>{
+        try {Shell.run(`taskkill /pid ${play.execProcess.pid} /T /F`)} catch (error) {Logs.log('Process already killed')}
+        play = Shell.process(`ffplay -autoexit -f lavfi amovie=reverseaudio.wav,areverse`, true);
         response.send('Started Playing');
         Logs.log('Started playing')
     })
@@ -149,6 +150,7 @@ function expressRoutes(app) {
 
     app.get('/stopPlay', (request, response) =>{ 
         try {
+            try {Shell.run(`taskkill /f /im ffplay.exe`)} catch (error) {Logs.log('Process already killed')}
             play.kill();
             Logs.log('Stopped playing')
         } catch (error) {
@@ -168,7 +170,7 @@ function doRing1() {
 function doRing2() {
     ring2 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! ${sinks[ring2sink].api}sink device="${sinks[ring2sink].id}"`, true);
     ring2.on('exit', ()=>{
-        if (ring1ringing) doRing2();
+        if (ring2ringing) doRing2();
     })
 }
 
