@@ -141,6 +141,7 @@ function doRing1(response) {
         stopRing1();
         stopRing2();
     } else {
+        if (ring1ringing) return response.send('Already ringing 1');
         ring1ringing = true;
         response.send('Started Ringer 1');
         ring1 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! ${sinks[ring1sink].api}sink device="${sinks[ring1sink].id}"`, true);
@@ -157,6 +158,7 @@ function doRing2(response) {
         stopRing1();
         stopRing2();
     } else {
+        if (ring2ringing) return response.send('Already ringing 2');
         ring2ringing = true;
         response.send('Started Ringer 2');
         ring2 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! ${sinks[ring2sink].api}sink device="${sinks[ring2sink].id}"`, true);
