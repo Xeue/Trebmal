@@ -92,17 +92,11 @@ function expressRoutes(app) {
 	app.use(express.static('public'))
 	app.use(express.urlencoded({ extended: true }))
 
-    app.get('/startRing1', (request, response) =>{ 
-        doRing1();
-        ring1ringing = true;
-        response.send('Started Ringer 1');
-    })
-
-    app.get('/startRing2', (request, response) =>{ 
-        doRing2();
-        ring2ringing = true;
-        response.send('Started Ringer 2');
-    })
+    app.get('/startRing1', (request, response) =>doRing1(response));
+    app.get('/startRing2', (request, response) =>doRing2(response));
+    app.get('/stopRing1', (request, response) =>stopRing1(response));
+    app.get('/stopRing2', (request, response) =>stopRing2(response));
+    app.get('/stopRingAll', (request, response) =>stopRingAll(response));
 
     app.get('/startRecord', (request, response) =>{ 
         record = new gstreamer.Pipeline(`${sources[recordSrc].api}src device="${sources[recordSrc].id}" ! audioconvert ! audioresample ! wavenc ! filesink location=reverseaudio.wav`);
@@ -116,26 +110,6 @@ function expressRoutes(app) {
         play = Shell.process(`ffplay -autoexit -f lavfi amovie=reverseaudio.wav,areverse`, true);
         response.send('Started Playing');
         Logs.log('Started playing')
-    })
-
-    app.get('/stopRing1', (request, response) =>{ 
-        ring1ringing = false;
-        try {
-            ring1.kill();
-        } catch (error) {
-            
-        }
-        response.send('Stopped Ringer 1')
-    })
-
-    app.get('/stopRing2', (request, response) =>{ 
-        ring2ringing = false;
-        try {
-            ring2.kill();
-        } catch (error) {
-            
-        }
-        response.send('Stopped Ringer 2')
     })
 
     app.get('/stopRecord', (request, response) =>{ 
@@ -160,18 +134,72 @@ function expressRoutes(app) {
     })
 }
 
-function doRing1() {
-    ring1 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! ${sinks[ring1sink].api}sink device="${sinks[ring1sink].id}"`, true);
-    ring1.on('exit', ()=>{
-        if (ring1ringing) doRing1();
-    })
+function doRing1(response) {
+    if (ring2ringing) {
+        ring1ringing = false;
+        ring2ringing = false;
+        stopRing1();
+        stopRing2();
+    } else {
+        ring1ringing = true;
+        response.send('Started Ringer 1');
+        ring1 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! ${sinks[ring1sink].api}sink device="${sinks[ring1sink].id}"`, true);
+        ring1.on('exit', ()=>{
+            if (ring1ringing) doRing1();
+        })
+    }
 }
 
-function doRing2() {
-    ring2 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! ${sinks[ring2sink].api}sink device="${sinks[ring2sink].id}"`, true);
-    ring2.on('exit', ()=>{
-        if (ring2ringing) doRing2();
-    })
+function doRing2(response) {
+    if (ring1ringing) {
+        ring1ringing = false;
+        ring2ringing = false;
+        stopRing1();
+        stopRing2();
+    } else {
+        ring2ringing = true;
+        response.send('Started Ringer 2');
+        ring2 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! ${sinks[ring2sink].api}sink device="${sinks[ring2sink].id}"`, true);
+        ring2.on('exit', ()=>{
+            if (ring2ringing) doRing2();
+        })
+    }
+}
+
+function stopRing1(response) {
+    ring1ringing = false;
+    try {
+        ring1.kill();
+    } catch (error) {
+        Logs.log('Ring 1 already stopped');
+    }
+    response.send('Stopped Ringer 1')
+}
+
+function stopRing2(response) {
+    ring2ringing = false;
+    try {
+        ring2.kill();
+    } catch (error) {
+        Logs.log('Ring 2 already stopped');
+    }
+    response.send('Stopped Ringer 2')
+}
+
+function stopRingAll(response) {
+    ring1ringing = false;
+    ring2ringing = false;
+    try {
+        ring1.kill();
+    } catch (error) {
+        Logs.log('Ring 1 already stopped');
+    }
+    try {
+        ring2.kill();
+    } catch (error) {
+        Logs.log('Ring 2 already stopped');
+    }
+    response.send('Stopped Ringers')
 }
 
 function getSinks() {
