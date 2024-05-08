@@ -92,11 +92,19 @@ function expressRoutes(app) {
 	app.use(express.static('public'))
 	app.use(express.urlencoded({ extended: true }))
 
-    app.get('/startRing1', (request, response) =>doRing1(response));
-    app.get('/startRing2', (request, response) =>doRing2(response));
-    app.get('/stopRing1', (request, response) =>stopRing1(response));
-    app.get('/stopRing2', (request, response) =>stopRing2(response));
-    app.get('/stopRingAll', (request, response) =>stopRingAll(response));
+    app.get('/startRing1', (request, response) => {
+        if (ring1ringing) return;
+        doRing1();
+        response.send('Starting Ring 1');
+    });
+    app.get('/startRing2', (request, response) =>{
+        if (ring2ringing) return;
+        doRing2();
+        response.send('Starting Ring 2');
+    });
+    app.get('/stopRing1', (request, response) =>stopRing1());
+    app.get('/stopRing2', (request, response) =>stopRing2());
+    app.get('/stopRingAll', (request, response) =>stopRingAll());
 
     app.get('/startRecord', (request, response) =>{ 
         record = new gstreamer.Pipeline(`${sources[recordSrc].api}src device="${sources[recordSrc].id}" ! audioconvert ! audioresample ! wavenc ! filesink location=reverseaudio.wav`);
@@ -134,16 +142,14 @@ function expressRoutes(app) {
     })
 }
 
-function doRing1(response) {
+function doRing1() {
     if (ring2ringing) {
         ring1ringing = false;
         ring2ringing = false;
         stopRing1();
         stopRing2();
     } else {
-        if (ring1ringing) return;
         ring1ringing = true;
-        response.send('Started Ringer 1');
         ring1 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! ${sinks[ring1sink].api}sink device="${sinks[ring1sink].id}"`, true);
         ring1.on('exit', ()=>{
             if (ring1ringing) doRing1();
@@ -151,16 +157,14 @@ function doRing1(response) {
     }
 }
 
-function doRing2(response) {
+function doRing2() {
     if (ring1ringing) {
         ring1ringing = false;
         ring2ringing = false;
         stopRing1();
         stopRing2();
     } else {
-        if (ring2ringing) return;
         ring2ringing = true;
-        response.send('Started Ringer 2');
         ring2 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! ${sinks[ring2sink].api}sink device="${sinks[ring2sink].id}"`, true);
         ring2.on('exit', ()=>{
             if (ring2ringing) doRing2();
@@ -175,7 +179,7 @@ function stopRing1(response) {
     } catch (error) {
         Logs.log('Ring 1 already stopped');
     }
-    response.send('Stopped Ringer 1')
+    response.send('Stopped Ringer 1');
 }
 
 function stopRing2(response) {
@@ -185,7 +189,7 @@ function stopRing2(response) {
     } catch (error) {
         Logs.log('Ring 2 already stopped');
     }
-    response.send('Stopped Ringer 2')
+    response.send('Stopped Ringer 1');
 }
 
 function stopRingAll(response) {
