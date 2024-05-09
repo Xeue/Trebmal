@@ -113,10 +113,10 @@ function expressRoutes(app) {
     app.get('/stopRingAll', (request, response) =>stopRingAll());
 
     app.get('/startRecord', (request, response) =>{ 
+        Logs.log('Started recording');
         record = new gstreamer.Pipeline(`${config.get('record1').api}src device="${config.get('record1').id}" ! audioconvert ! audioresample ! wavenc ! filesink location=reverseaudio.wav`);
         record.play();
         response.send('Started Recording');
-        Logs.log('Started recording')
     })
 
     app.get('/startPlay', (request, response) =>{
