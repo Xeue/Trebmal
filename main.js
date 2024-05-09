@@ -64,6 +64,23 @@ let ring2ringing = false;
 				'debugLineNum': config.get('debugLineNum')
             })
 			return true
+        case 'patch':
+            const sinks = getSinks().filter(sink => sink.api == 'wasapi');
+            const sources = getSources().filter(sink => sink.api == 'wasapi');
+            Logs.log('Please select output for Ring 1');
+            const ring1sink = await select(sinks, 0);
+            Logs.log('Please select output for Ring 2');
+            const ring2sink = await select(sinks, 0);
+            
+            Logs.log('Please select input for audio to be reversed');
+            const recordSrc = await select(sources, 0);
+            Logs.log('Sources all selected');
+            Logs.log('Sources all selected');
+            
+            config.set('ring1', sinks[ring1sink]);
+            config.set('ring2', sinks[ring2sink]);
+            config.set('record1', sources[recordSrc]);
+            return true
 		}
 	})
 
@@ -72,17 +89,6 @@ let ring2ringing = false;
 	Logs.log(`Trebmal can be accessed at http://localhost:${config.get('port')}`, ['C', 'SERVER', Logs.g])
 	config.print()
 }
-
-const sinks = getSinks().filter(sink => sink.api == 'wasapi');
-const sources = getSources().filter(sink => sink.api == 'wasapi');
-Logs.log('Please select output for Ring 1');
-const ring1sink = await select(sinks, 0);
-Logs.log('Please select output for Ring 2');
-const ring2sink = await select(sinks, 0);
-
-Logs.log('Please select input for audio to be reversed');
-const recordSrc = await select(sources, 0);
-Logs.log('Sources all selected');
 
 function expressRoutes(app) {
 	app.set('views', __dirname + '/views')
@@ -107,7 +113,7 @@ function expressRoutes(app) {
     app.get('/stopRingAll', (request, response) =>stopRingAll());
 
     app.get('/startRecord', (request, response) =>{ 
-        record = new gstreamer.Pipeline(`${sources[recordSrc].api}src device="${sources[recordSrc].id}" ! audioconvert ! audioresample ! wavenc ! filesink location=reverseaudio.wav`);
+        record = new gstreamer.Pipeline(`${config.get('record1').api}src device="${config.get('record1').id}" ! audioconvert ! audioresample ! wavenc ! filesink location=reverseaudio.wav`);
         record.play();
         response.send('Started Recording');
         Logs.log('Started recording')
@@ -148,9 +154,11 @@ function doRing1() {
         ring2ringing = false;
         stopRing1();
         stopRing2();
+        Logs.log('STOPPING ALL RINGS');
     } else {
+        Logs.log('1 IS RINGING');
         ring1ringing = true;
-        ring1 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! ${sinks[ring1sink].api}sink device="${sinks[ring1sink].id}"`, true);
+        ring1 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! ${config.get('ring1').api}sink device="${config.get('ring1').id}"`, true);
         ring1.on('exit', ()=>{
             if (ring1ringing) doRing1();
         })
@@ -163,33 +171,35 @@ function doRing2() {
         ring2ringing = false;
         stopRing1();
         stopRing2();
+        Logs.log('STOPPING ALL RINGS');
     } else {
+        Logs.log('2 IS RINGING');
         ring2ringing = true;
-        ring2 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! ${sinks[ring2sink].api}sink device="${sinks[ring2sink].id}"`, true);
+        ring2 = Shell.process(`gst-launch-1.0 filesrc location=ring.wav ! wavparse ! audioconvert ! audioresample ! ${config.get('ring2').api}sink device="${config.get('ring2').id}"`, true);
         ring2.on('exit', ()=>{
             if (ring2ringing) doRing2();
         })
     }
 }
 
-function stopRing1(response) {
+function stopRing1() {
     ring1ringing = false;
+    Logs.log('STOPPING RING 1');
     try {
         ring1.kill();
     } catch (error) {
         Logs.log('Ring 1 already stopped');
     }
-    response.send('Stopped Ringer 1');
 }
 
-function stopRing2(response) {
+function stopRing2() {
     ring2ringing = false;
+    Logs.log('STOPPING RING 2');
     try {
         ring2.kill();
     } catch (error) {
         Logs.log('Ring 2 already stopped');
     }
-    response.send('Stopped Ringer 1');
 }
 
 function stopRingAll(response) {
@@ -205,6 +215,7 @@ function stopRingAll(response) {
     } catch (error) {
         Logs.log('Ring 2 already stopped');
     }
+    Logs.log('STOPPING ALL RINGS');
     response.send('Stopped Ringers')
 }
 
