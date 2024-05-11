@@ -117,13 +117,18 @@ function expressRoutes(app) {
         record = new gstreamer.Pipeline(`${config.get('record1').api}src device="${config.get('record1').id}" ! audioconvert ! audioresample ! wavenc ! filesink location=reverseaudio.wav`);
         record.play();
         response.send('Started Recording');
+        fetch('http://10.201.0.88/trebRec');
     })
 
     app.get('/startPlay', (request, response) =>{
         try {Shell.run(`taskkill /pid ${play.execProcess.pid} /T /F`)} catch (error) {Logs.log('Process already killed')}
         play = Shell.process(`ffplay -autoexit -f lavfi amovie=reverseaudio.wav,areverse`, true);
+        play.on('exit', () => {
+            fetch('http://10.201.0.88/trebClip');
+        })
         response.send('Started Playing');
         Logs.log('Started playing')
+        fetch('http://10.201.0.88/trebPlay');
     })
 
     app.get('/stopRecord', (request, response) =>{ 
@@ -134,6 +139,7 @@ function expressRoutes(app) {
             Logs.error('Issue stopping', error);
         }
         response.send('Recording Stopped');
+        fetch('http://10.201.0.88/trebClip');
     })
 
     app.get('/stopPlay', (request, response) =>{ 
@@ -145,6 +151,7 @@ function expressRoutes(app) {
             
         }
         response.send('Playing Stopped');
+        fetch('http://10.201.0.88/trebDone');
     })
 }
 
@@ -202,7 +209,7 @@ function stopRing2() {
     }
 }
 
-function stopRingAll(response) {
+function stopRingAll() {
     ring1ringing = false;
     ring2ringing = false;
     try {
@@ -216,7 +223,6 @@ function stopRingAll(response) {
         Logs.log('Ring 2 already stopped');
     }
     Logs.log('STOPPING ALL RINGS');
-    response.send('Stopped Ringers')
 }
 
 function getSinks() {
